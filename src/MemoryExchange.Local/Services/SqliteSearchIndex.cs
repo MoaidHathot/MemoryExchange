@@ -187,6 +187,66 @@ public sealed class SqliteSearchIndex : ISearchIndex, IDisposable
         return embedding;
     }
 
+    /// <summary>
+    /// Returns the total number of chunks in the index.
+    /// Returns 0 if the table doesn't exist yet.
+    /// </summary>
+    public int GetChunkCount()
+    {
+        try
+        {
+            var conn = GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM chunks";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        catch (SqliteException)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Returns the number of distinct source files in the index.
+    /// Returns 0 if the table doesn't exist yet.
+    /// </summary>
+    public int GetSourceFileCount()
+    {
+        try
+        {
+            var conn = GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(DISTINCT source_file) FROM chunks";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+        catch (SqliteException)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Returns the most recent last_updated timestamp from the index.
+    /// Returns null if the index is empty.
+    /// </summary>
+    public DateTimeOffset? GetLastIndexedTime()
+    {
+        try
+        {
+            var conn = GetConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT MAX(last_updated) FROM chunks";
+            var result = cmd.ExecuteScalar();
+            if (result is string s && !string.IsNullOrEmpty(s))
+                return DateTimeOffset.Parse(s);
+            return null;
+        }
+        catch (SqliteException)
+        {
+            return null;
+        }
+    }
+
     public void Dispose()
     {
         _connection?.Close();

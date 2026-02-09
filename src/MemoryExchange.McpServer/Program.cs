@@ -155,6 +155,45 @@ var host = builder.Build();
 // --build-index: run indexing pipeline before starting the MCP server
 // Skipped when --watch is active (watch handles initial indexing itself)
 var buildIndex = builder.Configuration.GetValue<bool>("MemoryExchange:BuildIndex");
+
+// Startup diagnostics — log configuration so operators can verify args were parsed correctly
+{
+    var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("McpServer.Startup");
+    var options = host.Services.GetRequiredService<IOptions<MemoryExchangeOptions>>().Value;
+    logger.LogInformation("MemoryExchange MCP Server starting...");
+    logger.LogInformation("  Provider:    {Provider}", providerType);
+    logger.LogInformation("  Source path: {SourcePath}", string.IsNullOrWhiteSpace(options.SourcePath) ? "(not set)" : Path.GetFullPath(options.SourcePath));
+    logger.LogInformation("  Index name:  {IndexName}", options.IndexName);
+    logger.LogInformation("  Watch mode:  {Watch}", watchMode);
+    logger.LogInformation("  Build index: {BuildIndex}", buildIndex);
+
+    if (providerType == ProviderType.Local)
+    {
+        var localOptions = host.Services.GetRequiredService<IOptions<MemoryExchange.Local.Configuration.LocalProviderOptions>>().Value;
+        logger.LogInformation("  Database:    {DatabasePath}", localOptions.DatabasePath);
+    }
+
+    if (!string.IsNullOrWhiteSpace(options.SourcePath))
+    {
+        var fullSourcePath = Path.GetFullPath(options.SourcePath);
+        if (Directory.Exists(fullSourcePath))
+        {
+            var mdFiles = Directory.GetFiles(fullSourcePath, "*.md", SearchOption.AllDirectories);
+            logger.LogInformation("  Markdown files found: {Count}", mdFiles.Length);
+        }
+        else
+        {
+            logger.LogWarning("  Source directory does NOT exist: {Path}", fullSourcePath);
+        }
+    }
+
+    if (options.ExcludePatterns.Count > 0)
+    {
+        logger.LogInformation("  Exclude patterns: {Patterns}", string.Join(", ", options.ExcludePatterns));
+    }
+}
+
+// --build-index without --watch: run indexing before starting MCP server
 if (buildIndex && !watchMode)
 {
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("McpServer");

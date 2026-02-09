@@ -25,4 +25,22 @@ public interface ISearchIndex
     /// </summary>
     /// <param name="sourceFile">Relative path of the source file whose chunks should be removed.</param>
     Task DeleteChunksForFileAsync(string sourceFile);
+
+    /// <summary>
+    /// Returns the total number of chunks in the index.
+    /// Returns 0 if the index doesn't exist or is empty.
+    /// </summary>
+    int GetChunkCount() => 0;
+
+    /// <summary>
+    /// Returns the number of distinct source files in the index.
+    /// Returns 0 if the index doesn't exist or is empty.
+    /// </summary>
+    int GetSourceFileCount() => 0;
+
+    /// <summary>
+    /// Returns the most recent last_updated timestamp from the index.
+    /// Returns null if the index is empty.
+    /// </summary>
+    DateTimeOffset? GetLastIndexedTime() => null;
 }
