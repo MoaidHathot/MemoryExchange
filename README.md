@@ -2,7 +2,7 @@
 
 A .NET tool that makes markdown knowledge files (such as Cline-style "Memory Banks") searchable by GitHub Copilot (or any MCP-compatible client) via the **Model Context Protocol (MCP)**.
 
-It pre-processes markdown files into semantically chunked, vector-embedded documents and serves them through an MCP server as a single `search_memory_exchange` tool.
+It pre-processes markdown files into semantically chunked, vector-embedded documents and serves them through an MCP server as a single `search_memory_bank` tool.
 
 ## Features
 
@@ -17,23 +17,7 @@ It pre-processes markdown files into semantically chunked, vector-embedded docum
 
 ## Quick Start
 
-### 1. Download the ONNX model
-
-Use the included download script to fetch the `all-MiniLM-L6-v2` embedding model (~90 MB) from HuggingFace:
-
-```powershell
-# Windows (PowerShell)
-.\scripts\download-model.ps1
-```
-
-```bash
-# Linux / macOS
-./scripts/download-model.sh
-```
-
-This places the model in `src/MemoryExchange.Local/Models/all-MiniLM-L6-v2.onnx`. You can pass a custom output path as an argument if needed.
-
-### 2. Configure your MCP client
+### Configure your MCP client
 
 Add the server to your MCP client configuration (e.g. VS Code `mcp.json`, Cline, etc.):
 
@@ -225,13 +209,31 @@ tests/
 - **Storage:** SQLite with WAL mode, FTS5 virtual table, embeddings as BLOBs
 - **Vector search:** Pure C# cosine similarity (dot product on normalized vectors)
 
-## Building
+## Building from Source
+
+Requires .NET 9.0 SDK.
+
+### 1. Download the ONNX model
+
+The published NuGet package bundles the model, but when building from source you need to download it manually. Use the included script to fetch the `all-MiniLM-L6-v2` embedding model (~90 MB) from HuggingFace:
+
+```powershell
+# Windows (PowerShell)
+.\scripts\download-model.ps1
+```
+
+```bash
+# Linux / macOS
+./scripts/download-model.sh
+```
+
+This places the model in `src/MemoryExchange.Local/Models/all-MiniLM-L6-v2.onnx`. You can pass a custom output path as an argument if needed.
+
+### 2. Build
 
 ```bash
 dotnet build MemoryExchange.slnx
 ```
-
-Requires .NET 9.0 SDK.
 
 ## License
 
