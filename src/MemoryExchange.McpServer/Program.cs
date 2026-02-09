@@ -5,6 +5,7 @@ using MemoryExchange.Core.Configuration;
 using MemoryExchange.Core.Search;
 using MemoryExchange.Indexing;
 using MemoryExchange.Local;
+using MemoryExchange.McpServer.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -78,9 +79,16 @@ switch (providerType)
         break;
 }
 
-// Register indexing services (needed for --build-index)
+// Register indexing services (needed for --build-index and --watch)
 builder.Services.AddSingleton<FileScanner>();
 builder.Services.AddSingleton<IndexingPipeline>();
+
+// Register file watcher service when --watch is enabled
+var watchMode = builder.Configuration.GetValue<bool>("MemoryExchange:Watch");
+if (watchMode)
+{
+    builder.Services.AddHostedService<FileWatcherService>();
+}
 
 // Register SearchOrchestrator with optional DomainRoutingMap
 builder.Services.AddSingleton(sp =>
@@ -145,8 +153,9 @@ builder.Services
 var host = builder.Build();
 
 // --build-index: run indexing pipeline before starting the MCP server
+// Skipped when --watch is active (watch handles initial indexing itself)
 var buildIndex = builder.Configuration.GetValue<bool>("MemoryExchange:BuildIndex");
-if (buildIndex)
+if (buildIndex && !watchMode)
 {
     var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("McpServer");
     var options = host.Services.GetRequiredService<IOptions<MemoryExchangeOptions>>().Value;
@@ -194,6 +203,8 @@ public partial class Program
             ["MEMORYEXCHANGE_AZURE_OPENAI_ENDPOINT"] = "MemoryExchange:AzureOpenAI:Endpoint",
             ["MEMORYEXCHANGE_AZURE_OPENAI_APIKEY"] = "MemoryExchange:AzureOpenAI:ApiKey",
             ["MEMORYEXCHANGE_AZURE_OPENAI_DEPLOYMENT"] = "MemoryExchange:AzureOpenAI:EmbeddingDeployment",
+            ["MEMORYEXCHANGE_BUILDINDEX"] = "MemoryExchange:BuildIndex",
+            ["MEMORYEXCHANGE_WATCH"] = "MemoryExchange:Watch",
         };
 
         foreach (var (envVar, configKey) in mappings)
@@ -207,11 +218,12 @@ public partial class Program
     }
 
     /// <summary>
-    /// Parses CLI args (--key value pairs and boolean flags) and maps them to .NET configuration keys.
+    /// Parses CLI args (--key value pairs, boolean flags, and list args) and maps them to .NET configuration keys.
     /// Supports: --source-path, --database-path, --provider, --index-name, --model-path,
     ///           --azure-search-endpoint, --azure-search-key,
     ///           --azure-openai-endpoint, --azure-openai-key, --azure-openai-deployment,
-    ///           --build-index (boolean flag, no value needed)
+    ///           --build-index (boolean flag), --watch (boolean flag),
+    ///           --exclude (list arg, can appear multiple times)
     /// </summary>
     internal static IEnumerable<KeyValuePair<string, string?>> MapCommandLineArgs(string[] args)
     {
@@ -233,7 +245,15 @@ public partial class Program
         var flags = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["--build-index"] = "MemoryExchange:BuildIndex",
+            ["--watch"] = "MemoryExchange:Watch",
         };
+
+        // List arguments (can appear multiple times, mapped to indexed config keys)
+        var listArgs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["--exclude"] = "MemoryExchange:ExcludePatterns",
+        };
+        var listCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -245,6 +265,13 @@ public partial class Program
             else if (flags.TryGetValue(args[i], out var flagKey))
             {
                 yield return new KeyValuePair<string, string?>(flagKey, "true");
+            }
+            else if (listArgs.TryGetValue(args[i], out var listKey) && i + 1 < args.Length)
+            {
+                listCounters.TryGetValue(args[i], out var count);
+                yield return new KeyValuePair<string, string?>($"{listKey}:{count}", args[i + 1]);
+                listCounters[args[i]] = count + 1;
+                i++; // skip the value
             }
         }
     }

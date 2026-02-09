@@ -24,6 +24,13 @@ public class MemoryExchangeOptions
     /// Which search/embedding provider to use.
     /// </summary>
     public ProviderType Provider { get; set; } = ProviderType.Local;
+
+    /// <summary>
+    /// Optional glob patterns to exclude files/directories from indexing.
+    /// The "personal/" directory is always excluded regardless of this setting.
+    /// Examples: "**/archive/**", "**/drafts/**", "temp-*.md"
+    /// </summary>
+    public List<string> ExcludePatterns { get; set; } = [];
 }
 
 /// <summary>

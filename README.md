@@ -109,6 +109,8 @@ dotnet tool install -g MemoryExchange
 ```
 
 > With `--build-index`, the server indexes your source directory on startup (incremental — only changed files are re-processed) and then starts accepting MCP connections. No separate indexer step required.
+>
+> Alternatively, use `--watch` instead of `--build-index` to keep the index updated automatically while the server runs. The watcher builds the index on startup and then monitors for file changes (creates, edits, deletes, renames), triggering incremental re-indexing as needed.
 
 ### Stand-alone Indexer
 
@@ -129,6 +131,8 @@ dotnet run --project src/MemoryExchange.Indexer -- \
 | `--model-path` | Custom ONNX model file path (local provider) |
 | `--index-name` | Logical index name (default: `memory-exchange`) |
 | `--force`, `-f` | Force full re-index, ignoring cached state |
+| `--exclude` | Glob patterns to exclude from indexing (can be specified multiple times) |
+| `--watch`, `-w` | After indexing, watch for file changes and re-index incrementally (runs until Ctrl+C) |
 
 ## Configuration
 
@@ -147,6 +151,8 @@ Configuration is loaded with the following precedence (highest wins):
 | `MEMORYEXCHANGE_INDEXNAME` | Search index name |
 | `MEMORYEXCHANGE_DATABASEPATH` | SQLite database path (defaults to `memory_exchange.db` in the source directory) |
 | `MEMORYEXCHANGE_MODELPATH` | ONNX model file path |
+| `MEMORYEXCHANGE_BUILDINDEX` | Set to `true` to build index on startup |
+| `MEMORYEXCHANGE_WATCH` | Set to `true` to enable file watching mode |
 | `MEMORYEXCHANGE_AZURE_SEARCH_ENDPOINT` | Azure AI Search endpoint |
 | `MEMORYEXCHANGE_AZURE_SEARCH_APIKEY` | Azure AI Search API key |
 | `MEMORYEXCHANGE_AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint |
@@ -155,23 +161,35 @@ Configuration is loaded with the following precedence (highest wins):
 
 ### MCP Server CLI Args
 
-`--source-path`, `--provider`, `--index-name`, `--database-path`, `--model-path`, `--build-index`, `--azure-search-endpoint`, `--azure-search-key`, `--azure-openai-endpoint`, `--azure-openai-key`, `--azure-openai-deployment`
+`--source-path`, `--provider`, `--index-name`, `--database-path`, `--model-path`, `--build-index`, `--watch`, `--exclude`, `--azure-search-endpoint`, `--azure-search-key`, `--azure-openai-endpoint`, `--azure-openai-key`, `--azure-openai-deployment`
 
 > **`--build-index`** — When present, the MCP server runs incremental indexing on startup before accepting connections. This eliminates the need to run the Indexer CLI separately. Requires `--source-path` to be set.
 >
+> **`--watch`** — Monitors the source directory for markdown file changes and triggers incremental re-indexing automatically. Implies `--build-index` on startup (builds the index if it doesn't exist, then watches for changes). When `--watch` is active, a separate `--build-index` flag is redundant. Requires `--source-path` to be set.
+>
+> **`--exclude`** — Optional glob patterns to exclude files/directories from indexing. Can be specified multiple times (e.g., `--exclude "**/archive/**" --exclude "**/drafts/**"`). The `personal/` directory is always excluded regardless of this setting.
+>
 > **`--database-path`** — If omitted, defaults to `memory_exchange.db` inside the `--source-path` directory.
 
-## MCP Tool
+## MCP Tools
 
-The server exposes a single tool:
+The server exposes the following tools:
 
-### `search_memory_exchange`
+### `search_memory_bank`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `query` | `string` | yes | What to search for (e.g. "how does caching work", "deployment architecture") |
 | `currentFilePath` | `string` | no | File the user is editing — enables domain-aware boosting |
 | `topK` | `int` | no | Number of results, 1-10 (default: 5) |
+
+### `get_memory_file`
+
+Retrieves the full content of a specific markdown file from the memory exchange. Useful when a search result references a file and the agent needs the complete context.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `filePath` | `string` | yes | Relative path to the markdown file (e.g. "architecture/database.md") |
 
 ## Architecture
 

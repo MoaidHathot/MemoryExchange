@@ -44,6 +44,18 @@ var indexNameOption = new Option<string?>("--index-name")
     Description = "Logical name of the search index"
 };
 
+var excludeOption = new Option<string[]>("--exclude")
+{
+    Description = "Glob patterns of files/directories to exclude (can be specified multiple times)",
+    AllowMultipleArgumentsPerToken = true
+};
+
+var watchOption = new Option<bool>("--watch", "-w")
+{
+    Description = "After indexing, watch the source directory for changes and re-index incrementally. Keeps running until Ctrl+C.",
+    DefaultValueFactory = _ => false
+};
+
 var rootCommand = new RootCommand("Memory Exchange Indexer — indexes markdown files for search");
 rootCommand.Options.Add(sourceOption);
 rootCommand.Options.Add(forceOption);
@@ -51,6 +63,8 @@ rootCommand.Options.Add(providerOption);
 rootCommand.Options.Add(databasePathOption);
 rootCommand.Options.Add(modelPathOption);
 rootCommand.Options.Add(indexNameOption);
+rootCommand.Options.Add(excludeOption);
+rootCommand.Options.Add(watchOption);
 
 rootCommand.SetAction(async (parseResult, cancellationToken) =>
 {
@@ -60,13 +74,15 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     var databasePath = parseResult.GetValue(databasePathOption);
     var modelPath = parseResult.GetValue(modelPathOption);
     var indexName = parseResult.GetValue(indexNameOption);
-    await RunIndexerAsync(source, force, provider, databasePath, modelPath, indexName);
+    var excludePatterns = parseResult.GetValue(excludeOption) ?? [];
+    var watch = parseResult.GetValue(watchOption);
+    await RunIndexerAsync(source, force, provider, databasePath, modelPath, indexName, excludePatterns, watch);
 });
 
 return await rootCommand.Parse(args).InvokeAsync();
 
 static async Task RunIndexerAsync(string sourcePath, bool forceRebuild, string providerArg,
-    string? databasePath, string? modelPath, string? indexName)
+    string? databasePath, string? modelPath, string? indexName, string[] excludePatterns, bool watch)
 {
     // Validate source path
     if (!Directory.Exists(sourcePath))
@@ -97,6 +113,8 @@ static async Task RunIndexerAsync(string sourcePath, bool forceRebuild, string p
         cliOverrides["MemoryExchange:Local:ModelPath"] = modelPath;
     if (indexName is not null)
         cliOverrides["MemoryExchange:IndexName"] = indexName;
+    for (int i = 0; i < excludePatterns.Length; i++)
+        cliOverrides[$"MemoryExchange:ExcludePatterns:{i}"] = excludePatterns[i];
     if (cliOverrides.Count > 0)
         builder.Configuration.AddInMemoryCollection(cliOverrides);
 
@@ -139,6 +157,80 @@ static async Task RunIndexerAsync(string sourcePath, bool forceRebuild, string p
 
     var pipeline = host.Services.GetRequiredService<IndexingPipeline>();
     await pipeline.RunAsync(sourcePath, forceRebuild, options.IndexName);
+
+    if (!watch)
+        return;
+
+    // Watch mode: monitor for changes and re-index incrementally
+    logger.LogInformation("Watch mode: monitoring {Path} for changes (press Ctrl+C to stop)...", sourcePath);
+
+    using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+    };
+
+    using var watcher = new FileSystemWatcher(sourcePath)
+    {
+        Filter = "*.md",
+        IncludeSubdirectories = true,
+        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+        EnableRaisingEvents = true
+    };
+
+    var debounceDelay = TimeSpan.FromSeconds(2);
+    using var signal = new SemaphoreSlim(0);
+
+    void OnChange(object sender, FileSystemEventArgs e)
+    {
+        logger.LogDebug("File {ChangeType}: {Path}", e.ChangeType, e.Name);
+        if (signal.CurrentCount == 0)
+            signal.Release();
+    }
+
+    watcher.Created += OnChange;
+    watcher.Changed += OnChange;
+    watcher.Deleted += OnChange;
+    watcher.Renamed += (s, e) =>
+    {
+        logger.LogDebug("File renamed: {OldName} -> {Name}", e.OldName, e.Name);
+        if (signal.CurrentCount == 0)
+            signal.Release();
+    };
+
+    while (!cts.Token.IsCancellationRequested)
+    {
+        try
+        {
+            // Wait for a change signal
+            await signal.WaitAsync(cts.Token);
+
+            // Debounce: keep draining signals while more arrive within the window
+            while (await signal.WaitAsync(debounceDelay, cts.Token))
+            {
+                // Another change arrived within the debounce window — keep waiting
+            }
+
+            logger.LogInformation("Changes detected — running incremental re-index...");
+
+            try
+            {
+                await pipeline.RunAsync(sourcePath, forceRebuild: false, options.IndexName);
+                logger.LogInformation("Incremental re-index complete.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Incremental re-index failed");
+            }
+        }
+        catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+        {
+            break;
+        }
+    }
+
+    logger.LogInformation("Watch mode stopped.");
 }
 
 // Needed for user secrets + static helper methods

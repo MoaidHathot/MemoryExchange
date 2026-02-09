@@ -1,8 +1,11 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using MemoryExchange.Core.Configuration;
 using MemoryExchange.Core.Models;
+using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace MemoryExchange.Indexing;
 
@@ -13,13 +16,26 @@ namespace MemoryExchange.Indexing;
 public class FileScanner
 {
     private const string StateFileName = ".memory-exchange-state.json";
-    private static readonly string[] ExcludedDirectories = ["personal"];
+    private static readonly string[] AlwaysExcludedDirectories = ["personal"];
 
     private readonly ILogger<FileScanner> _logger;
+    private readonly Matcher? _excludeMatcher;
 
-    public FileScanner(ILogger<FileScanner> logger)
+    public FileScanner(ILogger<FileScanner> logger, IOptions<MemoryExchangeOptions> options)
     {
         _logger = logger;
+
+        var patterns = options.Value.ExcludePatterns;
+        if (patterns is { Count: > 0 })
+        {
+            _excludeMatcher = new Matcher();
+            foreach (var pattern in patterns)
+            {
+                _excludeMatcher.AddInclude(pattern);
+            }
+            _logger.LogInformation("Configured {Count} exclude pattern(s): {Patterns}",
+                patterns.Count, string.Join(", ", patterns));
+        }
     }
 
     /// <summary>
@@ -128,12 +144,26 @@ public class FileScanner
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static bool IsExcluded(string relativePath)
+    private bool IsExcluded(string relativePath)
     {
         var normalized = relativePath.Replace('\\', '/');
-        return ExcludedDirectories.Any(dir =>
+
+        // Always exclude hardcoded directories (e.g., "personal/")
+        if (AlwaysExcludedDirectories.Any(dir =>
             normalized.StartsWith(dir + "/", StringComparison.OrdinalIgnoreCase) ||
-            normalized.Equals(dir, StringComparison.OrdinalIgnoreCase));
+            normalized.Equals(dir, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // Apply user-configured glob patterns
+        if (_excludeMatcher is not null)
+        {
+            var result = _excludeMatcher.Match(normalized);
+            return result.HasMatches;
+        }
+
+        return false;
     }
 
     private static string NormalizePath(string path) => path.Replace('\\', '/');

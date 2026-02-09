@@ -8,7 +8,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>memory-exchange</ToolCommandName>
     <PackageId>MemoryExchange</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Moaid Hathot</Authors>
     <Description>Serve your project's memory exchange to coding agents via MCP</Description>
     <PackageProjectUrl>https://github.com/MoaidHathot/MemoryExchange</PackageProjectUrl>
@@ -39,5 +39,56 @@
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
+
+  <!--
+    Strip native runtimes that are irrelevant for a dotnet global tool used by coding agents.
+    This runs after publish (which is what `dotnet pack` uses for tool packages) and removes
+    mobile, embedded, browser, and exotic CPU architectures to bring the .nupkg under the
+    NuGet.org 250 MB limit.
+  -->
+  <Target Name="RemoveUnnecessaryNativeRuntimes" AfterTargets="Publish">
+    <ItemGroup>
+      <!-- Mobile / embedded / browser — not applicable for a CLI tool -->
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\android\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\ios\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\browser-wasm\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\browser\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\maccatalyst-arm64\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\maccatalyst-x64\**\*" />
+
+      <!-- x86 / 32-bit ARM — coding agents don't run on these -->
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\win-x86\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\win-arm\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-x86\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-arm\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-armel\**\*" />
+
+      <!-- Exotic Linux architectures -->
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-mips64\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-ppc64le\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-s390x\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-musl-arm\**\*" />
+      <_RuntimeToDelete Include="$(PublishDir)runtimes\linux-musl-s390x\**\*" />
+    </ItemGroup>
+
+    <Delete Files="@(_RuntimeToDelete)" />
+    <RemoveDir Directories="
+      $(PublishDir)runtimes\android;
+      $(PublishDir)runtimes\ios;
+      $(PublishDir)runtimes\browser-wasm;
+      $(PublishDir)runtimes\browser;
+      $(PublishDir)runtimes\maccatalyst-arm64;
+      $(PublishDir)runtimes\maccatalyst-x64;
+      $(PublishDir)runtimes\win-x86;
+      $(PublishDir)runtimes\win-arm;
+      $(PublishDir)runtimes\linux-x86;
+      $(PublishDir)runtimes\linux-arm;
+      $(PublishDir)runtimes\linux-armel;
+      $(PublishDir)runtimes\linux-mips64;
+      $(PublishDir)runtimes\linux-ppc64le;
+      $(PublishDir)runtimes\linux-s390x;
+      $(PublishDir)runtimes\linux-musl-arm;
+      $(PublishDir)runtimes\linux-musl-s390x" />
+  </Target>
 
 </Project>
