@@ -43,6 +43,19 @@ builder.Logging.AddConsole(consoleOptions =>
     consoleOptions.LogToStandardErrorThreshold = LogLevel.Trace;
 });
 
+// Default database path to {SourcePath}/memory_exchange.db when not explicitly configured
+var configuredSourcePath = builder.Configuration.GetValue<string>("MemoryExchange:SourcePath");
+var configuredDatabasePath = builder.Configuration.GetValue<string>("MemoryExchange:Local:DatabasePath");
+
+if (string.IsNullOrWhiteSpace(configuredDatabasePath) && !string.IsNullOrWhiteSpace(configuredSourcePath))
+{
+    builder.Configuration.AddInMemoryCollection(
+    [
+        new KeyValuePair<string, string?>("MemoryExchange:Local:DatabasePath",
+            Path.Combine(configuredSourcePath, "memory_exchange.db"))
+    ]);
+}
+
 // Bind core configuration
 builder.Services.Configure<MemoryExchangeOptions>(
     builder.Configuration.GetSection(MemoryExchangeOptions.SectionName));

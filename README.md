@@ -34,7 +34,6 @@ Add the server to your MCP client configuration (e.g. VS Code `mcp.json`, Cline,
         "--yes",
         "MemoryExchange",
         "--source-path", "/path/to/your/memory-exchange",
-        "--database-path", "/path/to/memoryexchange.db",
         "--provider", "local",
         "--build-index"
       ]
@@ -57,7 +56,6 @@ dotnet tool install -g MemoryExchange
       "command": "memory-exchange",
       "args": [
         "--source-path", "/path/to/your/memory-exchange",
-        "--database-path", "/path/to/memoryexchange.db",
         "--provider", "local",
         "--build-index"
       ]
@@ -82,7 +80,6 @@ dotnet tool install -g MemoryExchange
       ],
       "env": {
         "MEMORYEXCHANGE_SOURCEPATH": "/path/to/your/memory-exchange",
-        "MEMORYEXCHANGE_DATABASEPATH": "/path/to/memoryexchange.db",
         "MEMORYEXCHANGE_PROVIDER": "local"
       }
     }
@@ -103,7 +100,6 @@ dotnet tool install -g MemoryExchange
         "--project", "/path/to/MemoryExchange/src/MemoryExchange.McpServer",
         "--",
         "--source-path", "/path/to/your/memory-exchange",
-        "--database-path", "/path/to/memoryexchange.db",
         "--provider", "local",
         "--build-index"
       ]
@@ -129,7 +125,7 @@ dotnet run --project src/MemoryExchange.Indexer -- \
 |------|-------------|
 | `--source`, `-s` | **(required)** Path to the source directory containing markdown files |
 | `--provider`, `-p` | `local` (default) or `azure` |
-| `--database-path` | SQLite database file path (local provider) |
+| `--database-path` | SQLite database file path (defaults to `memory_exchange.db` in the source directory) |
 | `--model-path` | Custom ONNX model file path (local provider) |
 | `--index-name` | Logical index name (default: `memory-exchange`) |
 | `--force`, `-f` | Force full re-index, ignoring cached state |
@@ -149,7 +145,7 @@ Configuration is loaded with the following precedence (highest wins):
 | `MEMORYEXCHANGE_SOURCEPATH` | Source directory path |
 | `MEMORYEXCHANGE_PROVIDER` | `local` or `azure` |
 | `MEMORYEXCHANGE_INDEXNAME` | Search index name |
-| `MEMORYEXCHANGE_DATABASEPATH` | SQLite database path |
+| `MEMORYEXCHANGE_DATABASEPATH` | SQLite database path (defaults to `memory_exchange.db` in the source directory) |
 | `MEMORYEXCHANGE_MODELPATH` | ONNX model file path |
 | `MEMORYEXCHANGE_AZURE_SEARCH_ENDPOINT` | Azure AI Search endpoint |
 | `MEMORYEXCHANGE_AZURE_SEARCH_APIKEY` | Azure AI Search API key |
@@ -162,6 +158,8 @@ Configuration is loaded with the following precedence (highest wins):
 `--source-path`, `--provider`, `--index-name`, `--database-path`, `--model-path`, `--build-index`, `--azure-search-endpoint`, `--azure-search-key`, `--azure-openai-endpoint`, `--azure-openai-key`, `--azure-openai-deployment`
 
 > **`--build-index`** — When present, the MCP server runs incremental indexing on startup before accepting connections. This eliminates the need to run the Indexer CLI separately. Requires `--source-path` to be set.
+>
+> **`--database-path`** — If omitted, defaults to `memory_exchange.db` inside the `--source-path` directory.
 
 ## MCP Tool
 
