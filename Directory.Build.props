@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <Authors>Moaid Hathot</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/MoaidHathot/MemoryExchange</RepositoryUrl>
+    <Copyright>Copyright © Moaid Hathot 2026</Copyright>
+  </PropertyGroup>
+</Project>

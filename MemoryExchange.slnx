@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MemoryExchange.Core/MemoryExchange.Core.csproj" />
+    <Project Path="src/MemoryExchange.Azure/MemoryExchange.Azure.csproj" />
+    <Project Path="src/MemoryExchange.Local/MemoryExchange.Local.csproj" />
+    <Project Path="src/MemoryExchange.Indexer/MemoryExchange.Indexer.csproj" />
+    <Project Path="src/MemoryExchange.Indexing/MemoryExchange.Indexing.csproj" />
+    <Project Path="src/MemoryExchange.McpServer/MemoryExchange.McpServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MemoryExchange.Indexer.LocalRunner/MemoryExchange.Indexer.LocalRunner.csproj" />
+  </Folder>
+</Solution>

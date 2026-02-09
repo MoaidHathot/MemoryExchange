@@ -11,6 +11,16 @@
 *.sln.docstates
 *.env
 
+# ONNX models (large binary files, download separately)
+*.onnx
+
+# MemoryExchange runtime artifacts
+*.db
+*.db-shm
+*.db-wal
+.memory-exchange-state.json
+session-*.md
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
