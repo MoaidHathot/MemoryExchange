@@ -2,7 +2,7 @@
 
 A .NET tool that makes markdown knowledge files (such as Cline-style "Memory Banks") searchable by GitHub Copilot (or any MCP-compatible client) via the **Model Context Protocol (MCP)**.
 
-It pre-processes markdown files into semantically chunked, vector-embedded documents and serves them through an MCP server as a single `search_memory_bank` tool.
+It pre-processes markdown files into semantically chunked, vector-embedded documents and serves them through an MCP server with tools for searching, retrieving files, and diagnosing index health.
 
 ## Features
 
@@ -190,6 +190,16 @@ Retrieves the full content of a specific markdown file from the memory exchange.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `filePath` | `string` | yes | Relative path to the markdown file (e.g. "architecture/database.md") |
+
+### `get_index_status`
+
+Returns diagnostic information about the memory exchange index. Use this to verify the index is populated before searching, or to diagnose why `search_memory_bank` returns no results.
+
+No parameters. Returns the source path, provider, index name, chunk count, file count, and last indexed time. When the index is empty, it includes actionable troubleshooting hints.
+
+## Startup Diagnostics
+
+When the MCP server starts, it prints diagnostic information to stderr including the configured provider, source path, index name, watch/build-index mode, and the number of markdown files found in the source directory. This output is visible in the MCP client's server logs and is useful for confirming the server is configured correctly.
 
 ## Architecture
 
