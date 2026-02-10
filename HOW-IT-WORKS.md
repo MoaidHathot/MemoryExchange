@@ -118,27 +118,86 @@ Combining both gives high recall (finds relevant content) with high precision (r
 
 The same embedding model used during indexing converts the search query into a 384-dimensional vector. Using the same model ensures the query vector lives in the same space as the stored chunk vectors — so distances between them are meaningful.
 
-### Step 2: Keyword Search (BM25)
+### Step 2: Keyword Search (FTS5 + BM25)
 
-The query is run against the FTS5 index. [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) is a ranking function that scores documents based on term frequency, inverse document frequency, and document length — the standard algorithm behind most search engines.
+The query is run against the [FTS5](https://www.sqlite.org/fts5.html) full-text index. FTS5 is SQLite's built-in full-text search engine — think of it as a lightweight Elasticsearch embedded directly in the database file. Under the hood, it maintains an **inverted index**: a mapping from every word to the list of chunks that contain it. This makes keyword lookups O(1) per term instead of scanning every chunk.
 
-For example, querying `"caching strategy"` will score chunks higher if they contain both words, especially if those words are rare across the corpus.
+FTS5 ranks matches using [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) (Best Matching 25), the same family of ranking functions used by Elasticsearch, Lucene, and most production search engines. BM25 is built on two intuitions:
+
+- **TF (Term Frequency)** — if a word appears more often in a chunk, that chunk is probably more relevant to that word. But the relationship is sublinear: the first occurrence matters a lot, the tenth barely moves the score. BM25 models this with a saturation curve controlled by parameter `k1` (typically 1.2), so relevance doesn't scale linearly with word count.
+
+- **IDF (Inverse Document Frequency)** — rare words are more informative than common ones. If `"PolicyController"` appears in only 2 out of 500 chunks, it's a strong signal. If `"the"` appears in all 500, it tells us nothing. IDF is computed as `log((N - n + 0.5) / (n + 0.5))` where `N` is the total number of chunks and `n` is how many contain the term.
+
+BM25 also normalizes by **document length** — a short chunk that mentions `"caching"` three times is probably more focused on caching than a long chunk that mentions it three times among 200 other words. Parameter `b` (typically 0.75) controls how much document length affects the score.
+
+The combined formula for a single term in a single chunk:
+
+```
+BM25(term, chunk) = IDF(term) × (TF × (k1 + 1)) / (TF + k1 × (1 - b + b × chunkLen/avgChunkLen))
+```
+
+For multi-word queries, the scores for each term are summed. SQLite's `bm25()` function handles all of this internally — MemoryExchange simply calls `SELECT ... FROM chunks_fts WHERE chunks_fts MATCH @query ORDER BY bm25(chunks_fts)` and gets back chunks ranked by relevance.
+
+For example, querying `"caching strategy"` will score chunks higher if they contain both words, especially if those words are rare across the corpus. A chunk titled "Redis Caching Strategy" in a corpus where most chunks discuss API design will rank very high because both terms have high IDF.
 
 ### Step 3: Vector Search (Cosine Similarity)
 
-The query embedding is compared against every stored chunk embedding using cosine similarity (dot product on normalized vectors). This finds chunks that are *semantically* similar even without shared keywords.
+The query embedding is compared against every stored chunk embedding using **cosine similarity**. This finds chunks that are *semantically* similar even without shared keywords.
 
-For example, a query about `"how data is cached"` will match a chunk about `"Redis TTL and eviction policies"` because the model understands these concepts are related.
+Cosine similarity measures the angle between two vectors — if they point in the same direction, the text is semantically similar, regardless of whether they share any words. Two vectors pointing in exactly the same direction have a cosine similarity of 1.0; perpendicular vectors score 0.0.
+
+The general formula is:
+
+```
+cosine_similarity(A, B) = (A · B) / (‖A‖ × ‖B‖)
+```
+
+where `A · B` is the dot product (sum of element-wise products) and `‖A‖` is the vector's magnitude (L2 norm). However, since MemoryExchange L2-normalizes all embeddings during indexing (step 3 above), every vector already has magnitude 1.0. This means the denominator is always `1 × 1 = 1`, and cosine similarity collapses to just the **dot product**:
+
+```csharp
+float dot = 0;
+for (int i = 0; i < 384; i++)
+    dot += queryEmbedding[i] * chunkEmbedding[i];
+// dot IS the cosine similarity — no division needed
+```
+
+This is a deliberate optimization: by normalizing once at index time, every query-time comparison saves a square root and a division. Over hundreds of chunks per query, this adds up.
+
+The search is a **brute-force linear scan** — every chunk's embedding is loaded from SQLite and compared against the query. This is fast enough for knowledge bases of the size MemoryExchange targets (hundreds to low thousands of chunks). The scan runs in-process with no network overhead, and 384-dimensional dot products are cheap on modern CPUs.
+
+For example, a query about `"how data is cached"` will match a chunk about `"Redis TTL and eviction policies"` because the model understands these concepts are related — even though the two texts share zero keywords.
 
 ### Step 4: Reciprocal Rank Fusion (RRF)
 
-The two ranked lists are merged using [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) with k=60:
+The two ranked lists are merged using [Reciprocal Rank Fusion](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf):
 
 ```
-score(chunk) = 1/(60 + rank_keyword) + 1/(60 + rank_vector)
+score(chunk) = 1/(k + rank_keyword) + 1/(k + rank_vector)
 ```
 
-RRF is elegant because it doesn't care about the raw scores from each system (which are on different scales) — it only uses **rank positions**. A chunk ranked #1 in both lists gets `1/61 + 1/61 = 0.0328`. A chunk ranked #1 in keywords but absent from vector results gets only `1/61 = 0.0164`. This naturally rewards chunks that both systems agree are relevant.
+**Why not just combine the raw scores?** BM25 and cosine similarity produce scores on completely different scales. SQLite's `bm25()` returns *negative* values (lower is better, typically -5 to 0), while cosine similarity returns values between 0 and 1 (higher is better). You can't average or sum these meaningfully — a BM25 score of -2.3 and a cosine score of 0.87 aren't comparable. Normalizing them (e.g., min-max scaling) is fragile because the ranges shift depending on the query and corpus.
+
+RRF sidesteps all of this by ignoring the scores entirely and working only with **rank positions**. It doesn't matter *how much* better chunk A scored than chunk B in keyword search — only that A was ranked higher. This makes the merge stable across different queries, corpus sizes, and scoring functions.
+
+**What k=60 controls.** The constant `k` (set to 60 in MemoryExchange) is a smoothing parameter that dampens the advantage of top-ranked items. Consider the difference between rank 1 and rank 2:
+
+- With `k=1`: scores are `1/2 = 0.500` vs `1/3 = 0.333` — a 50% gap
+- With `k=60`: scores are `1/61 = 0.01639` vs `1/62 = 0.01613` — a 1.6% gap
+
+A higher `k` means the top ranks don't dominate as aggressively, giving more weight to agreement between the two systems rather than absolute position in either one. The value 60 comes from the [original RRF paper](https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf) and is widely used as a default.
+
+**How the merge works.** The implementation iterates through both ranked lists, computing an RRF contribution for each chunk in each list. If a chunk appears in both lists, its contributions are summed. If it appears in only one, it gets only that single contribution — roughly half the score of a chunk that appears in both.
+
+Here's a worked example with four chunks:
+
+| Chunk | Keyword rank | Vector rank | Keyword RRF | Vector RRF | **Total RRF** |
+|-------|-------------|-------------|-------------|------------|---------------|
+| "Redis TTL policies" | #1 | #2 | 1/61 = 0.01639 | 1/62 = 0.01613 | **0.03252** |
+| "Cache invalidation" | #3 | #1 | 1/63 = 0.01587 | 1/61 = 0.01639 | **0.03226** |
+| "Redis connection config" | #2 | — | 1/62 = 0.01613 | 0 | **0.01613** |
+| "Eviction strategies" | — | #3 | 0 | 1/63 = 0.01587 | **0.01587** |
+
+The first two chunks rank highest because *both* systems agree they're relevant. "Redis connection config" matched keywords (it contains "Redis") but wasn't semantically related to the query, so it drops to third. "Eviction strategies" was semantically close but lacked keyword overlap, so it comes last. A chunk appearing in both lists will always outscore a chunk appearing in only one — this is the core property that makes RRF effective for hybrid search.
 
 ### Step 5: Domain & Instruction Boosting
 
