@@ -153,6 +153,7 @@ Configuration is loaded with the following precedence (highest wins):
 | `MEMORYEXCHANGE_MODELPATH` | ONNX model file path |
 | `MEMORYEXCHANGE_BUILDINDEX` | Set to `true` to build index on startup |
 | `MEMORYEXCHANGE_WATCH` | Set to `true` to enable file watching mode |
+| `MEMORYEXCHANGE_DEBUG` | Set to `true` to enable debug-only tools (e.g. `get_index_status`) |
 | `MEMORYEXCHANGE_AZURE_SEARCH_ENDPOINT` | Azure AI Search endpoint |
 | `MEMORYEXCHANGE_AZURE_SEARCH_APIKEY` | Azure AI Search API key |
 | `MEMORYEXCHANGE_AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint |
@@ -161,11 +162,13 @@ Configuration is loaded with the following precedence (highest wins):
 
 ### MCP Server CLI Args
 
-`--source-path`, `--provider`, `--index-name`, `--database-path`, `--model-path`, `--build-index`, `--watch`, `--exclude`, `--azure-search-endpoint`, `--azure-search-key`, `--azure-openai-endpoint`, `--azure-openai-key`, `--azure-openai-deployment`
+`--source-path`, `--provider`, `--index-name`, `--database-path`, `--model-path`, `--build-index`, `--watch`, `--debug`, `--exclude`, `--azure-search-endpoint`, `--azure-search-key`, `--azure-openai-endpoint`, `--azure-openai-key`, `--azure-openai-deployment`
 
 > **`--build-index`** — When present, the MCP server runs incremental indexing on startup before accepting connections. This eliminates the need to run the Indexer CLI separately. Requires `--source-path` to be set.
 >
 > **`--watch`** — Monitors the source directory for markdown file changes and triggers incremental re-indexing automatically. Implies `--build-index` on startup (builds the index if it doesn't exist, then watches for changes). When `--watch` is active, a separate `--build-index` flag is redundant. Requires `--source-path` to be set.
+>
+> **`--debug`** — Enables debug-only MCP tools (e.g. `get_index_status`). Without this flag, these tools are not registered and are invisible to AI agents.
 >
 > **`--exclude`** — Optional glob patterns to exclude files/directories from indexing. Can be specified multiple times (e.g., `--exclude "**/archive/**" --exclude "**/drafts/**"`). The `personal/` directory is always excluded regardless of this setting.
 >
@@ -191,11 +194,13 @@ Retrieves the full content of a specific markdown file from the memory exchange.
 |-----------|------|----------|-------------|
 | `filePath` | `string` | yes | Relative path to the markdown file (e.g. "architecture/database.md") |
 
-### `get_index_status`
+### `get_index_status` *(debug only)*
 
 Returns diagnostic information about the memory exchange index. Use this to verify the index is populated before searching, or to diagnose why `search_memory_bank` returns no results.
 
 No parameters. Returns the source path, provider, index name, chunk count, file count, and last indexed time. When the index is empty, it includes actionable troubleshooting hints.
+
+> This tool is only registered when the server is started with the `--debug` flag (or `MEMORYEXCHANGE_DEBUG=true`). Without it, AI agents will not see this tool.
 
 ## Startup Diagnostics
 

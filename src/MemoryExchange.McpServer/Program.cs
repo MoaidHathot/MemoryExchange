@@ -6,6 +6,7 @@ using MemoryExchange.Core.Search;
 using MemoryExchange.Indexing;
 using MemoryExchange.Local;
 using MemoryExchange.McpServer.Services;
+using MemoryExchange.McpServer.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -130,8 +131,10 @@ builder.Services.AddSingleton(sp =>
     return new SearchOrchestrator(searchService, embeddingService, logger, routingMap, options.SourcePath);
 });
 
-// Register MCP server with stdio transport and auto-discover tools
-builder.Services
+// Register MCP server with stdio transport and explicit tool registration
+var debugMode = builder.Configuration.GetValue<bool>("MemoryExchange:Debug");
+
+var mcpBuilder = builder.Services
     .AddMcpServer(options =>
     {
         options.ServerInfo = new()
@@ -148,7 +151,14 @@ builder.Services
             "that should be followed consistently.";
     })
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithTools<SearchMemoryExchangeTool>()
+    .WithTools<GetMemoryFileTool>();
+
+// Debug-only tools: only visible to AI agents when --debug is passed
+if (debugMode)
+{
+    mcpBuilder.WithTools<GetIndexStatusTool>();
+}
 
 var host = builder.Build();
 
@@ -166,6 +176,7 @@ var buildIndex = builder.Configuration.GetValue<bool>("MemoryExchange:BuildIndex
     logger.LogInformation("  Index name:  {IndexName}", options.IndexName);
     logger.LogInformation("  Watch mode:  {Watch}", watchMode);
     logger.LogInformation("  Build index: {BuildIndex}", buildIndex);
+    logger.LogInformation("  Debug mode:  {Debug}", debugMode);
 
     if (providerType == ProviderType.Local)
     {
@@ -244,6 +255,7 @@ public partial class Program
             ["MEMORYEXCHANGE_AZURE_OPENAI_DEPLOYMENT"] = "MemoryExchange:AzureOpenAI:EmbeddingDeployment",
             ["MEMORYEXCHANGE_BUILDINDEX"] = "MemoryExchange:BuildIndex",
             ["MEMORYEXCHANGE_WATCH"] = "MemoryExchange:Watch",
+            ["MEMORYEXCHANGE_DEBUG"] = "MemoryExchange:Debug",
         };
 
         foreach (var (envVar, configKey) in mappings)
@@ -261,7 +273,7 @@ public partial class Program
     /// Supports: --source-path, --database-path, --provider, --index-name, --model-path,
     ///           --azure-search-endpoint, --azure-search-key,
     ///           --azure-openai-endpoint, --azure-openai-key, --azure-openai-deployment,
-    ///           --build-index (boolean flag), --watch (boolean flag),
+    ///           --build-index (boolean flag), --watch (boolean flag), --debug (boolean flag),
     ///           --exclude (list arg, can appear multiple times)
     /// </summary>
     internal static IEnumerable<KeyValuePair<string, string?>> MapCommandLineArgs(string[] args)
@@ -285,6 +297,7 @@ public partial class Program
         {
             ["--build-index"] = "MemoryExchange:BuildIndex",
             ["--watch"] = "MemoryExchange:Watch",
+            ["--debug"] = "MemoryExchange:Debug",
         };
 
         // List arguments (can appear multiple times, mapped to indexed config keys)
